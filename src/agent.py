@@ -1,6 +1,7 @@
 import logging
 import os
 import statistics
+from pathlib import Path
 from typing import Any
 
 from dotenv import load_dotenv
@@ -10,10 +11,13 @@ from livekit.plugins.turn_detector.multilingual import MultilingualModel
 
 from assistant import Assistant
 from observability import LocalObservability, percentile, safe_name, setup_observability
+from rag.retriever import Retriever
 
 logger = logging.getLogger("agent")
 
 load_dotenv(".env.local")
+
+_retriever: Retriever | None = Retriever.load(Path("data/rag_index"))
 
 server = AgentServer()
 
@@ -144,7 +148,7 @@ async def my_agent(ctx: JobContext):
     await ctx.connect()
 
     await session.start(
-        agent=Assistant(),
+        agent=Assistant(retriever=_retriever),
         room=ctx.room,
         room_options=room_io.RoomOptions(
             audio_input=room_io.AudioInputOptions(),

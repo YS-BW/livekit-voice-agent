@@ -31,3 +31,8 @@ KMS
 
 # GitHub CLI
 .github/personal-instructions.md
+
+# RAG
+data/rag_index/
+docs/
+log/

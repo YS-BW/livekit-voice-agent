@@ -13,6 +13,9 @@ dependencies = [
     "livekit-plugins-aliyun",
     "livekit-plugins-noise-cancellation~=0.2",
     "python-dotenv",
+    "llama-index-core>=0.12",
+    "llama-index-embeddings-openai>=0.3",
+    "pypdf>=4.0",
 ]
 
 [dependency-groups]
