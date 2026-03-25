@@ -1,0 +1,8 @@
+{
+  "include": [
+    "src"
+  ],
+  "extraPaths": [
+    "../qwen-livekit-stt"
+  ]
+}

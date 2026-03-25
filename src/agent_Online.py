@@ -6,7 +6,7 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 from livekit.agents import AgentServer, AgentSession, JobContext, cli, room_io
-from livekit.plugins import minimax, openai, volcengine
+from livekit.plugins import minimax, openai, volcengine,silero
 
 from assistant import Assistant
 from metrics_hooks import (
@@ -52,12 +52,6 @@ async def my_agent(ctx: JobContext) -> None:
             force_to_speech_time=1000,
             interim_results=True,
         ),
-        # 使用本地vllm部署的 Qwen 模型进行测试，替换为实际可用的模型和地址
-        # llm=openai.LLM(
-        #     model="./qwen",
-        #     base_url="http://127.0.0.1:8000/v1",
-        #     api_key="fake-key",
-        # ),
         llm=openai.LLM(
             model="qwen-flash",
             base_url="https://dashscope.aliyuncs.com/compatible-mode/v1",
@@ -75,6 +69,8 @@ async def my_agent(ctx: JobContext) -> None:
         min_endpointing_delay=0.0,
         max_endpointing_delay=0.05,
         turn_detection="stt",
+        vad = silero.VAD.load()
+
     )
 
     await ctx.connect()
