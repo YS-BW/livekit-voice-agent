@@ -5,10 +5,32 @@
 > - **ASR**: `qwen-asr`
 > - **LLM**: `qwen2.5-7b-instruct`
 > - **TTS**: `Qwen3-TTS-12Hz-1.7B-CustomVoice`
+>
+> ⚠️ **共同前提**：不管你跑 `Online` 还是 `Local`，都必须先部署并跑通 `LiveKit Server`。没有 `LiveKit Server`，两个版本都不能工作。
 
 ---
 
-## 1️⃣ 项目定位
+## 1️⃣ 共同前提
+
+在区分 `Online` 和 `Local` 之前，先明确最前置的一条：
+
+- **两个版本都依赖 `LiveKit Server`**
+- **两个版本的第一步都不是启动 Agent，而是先确认 `LiveKit Server` 可用**
+- 如果 `LiveKit Server` 没部署好，后面的 `ASR / LLM / TTS / Agent` 都接不起来
+
+最小可运行前提是：
+
+1. 先部署 `LiveKit Server`
+2. 再决定你走 `Online` 还是 `Local`
+3. 最后再启动对应的 Agent 和模型服务
+
+`LiveKit Server` 的部署方式见：
+
+- [`docs/LiveKit-Server部署.md`](D:/Worker/LiveKit/my-agent/docs/LiveKit-Server部署.md)
+
+---
+
+## 2️⃣ 项目定位
 
 这个仓库主要解决一件事：把 **实时语音通话**、**ASR**、**LLM**、**TTS** 串成一条可以落地部署的语音销售 Agent 链路。
 
@@ -24,16 +46,22 @@
 
 ---
 
-## 2️⃣ Online / Local 版本说明
+## 3️⃣ Online / Local 版本说明
 
 ### 🌐 Online 版
 
 这是当前**默认可直接跑**的版本，也是推荐优先启动的版本，适合正式环境、演示环境、联调环境。
 
+前提：
+
+- `LiveKit Server` 已经部署并可用
+
+形态：
+
 - `LiveKit Server` 放在普通服务器
 - `Agent` 放在普通服务器
 - `ASR / LLM / TTS` 使用已经可用的线上服务
-- Agent 直接通过 HTTP / WebSocket 去调用这些服务
+- Agent 直接通过 HTTP / WebSocket 调用这些服务
 
 特点：
 
@@ -41,11 +69,13 @@
 - 不需要你先自己把整套模型服务部署起来
 - 适合先验证整条链路是否跑通
 
-这也是当前仓库默认推荐的启动方式。
-
 ### 💻 Local 版
 
 这不是“纯开发版”，而是**偏低延迟的自部署版**。它的目标是把核心推理链路切到你自己的模型服务上，从而获得更低延迟和更强可控性。
+
+前提：
+
+- `LiveKit Server` 已经部署并可用
 
 但要明确：
 
@@ -68,7 +98,7 @@
 
 ---
 
-## 3️⃣ 当前推荐模型组合
+## 4️⃣ 当前推荐模型组合
 
 ### 🧠 自部署推荐栈
 
@@ -80,14 +110,14 @@
 
 ### 📌 当前代码现状
 
-- [`src/agent_Local.py`](./src/agent_Local.py) 已经接到 `Qwen ASR + qwen2.5-7b-instruct`
-- [`src/agent_Local.py`](./src/agent_Local.py) 里的 **TTS 目前默认还是 MiniMax**
-- [`qwen-tts-service/server.py`](./qwen-tts-service/server.py) 已经准备好，可单独启动 `Qwen3-TTS-CustomVoice` 服务
+- [`src/agent_Local.py`](D:/Worker/LiveKit/my-agent/src/agent_Local.py) 已经接到 `Qwen ASR + qwen2.5-7b-instruct`
+- [`src/agent_Local.py`](D:/Worker/LiveKit/my-agent/src/agent_Local.py) 里的 **TTS 目前默认还是 MiniMax**
+- [`qwen-tts-service/server.py`](D:/Worker/LiveKit/my-agent/qwen-tts-service/server.py) 已经准备好，可单独启动 `Qwen3-TTS-CustomVoice` 服务
 - 也就是说：**Qwen TTS 服务端已经有了，但 agent 侧还没有正式切到这个 HTTP TTS 服务**
 
 ---
 
-## 4️⃣ 哪些必须跑在 GPU，哪些可以跑在普通服务器
+## 5️⃣ 哪些必须跑在 GPU，哪些可以跑在普通服务器
 
 ### 🖥️ GPU 服务器
 
@@ -130,11 +160,11 @@
 
 ---
 
-## 5️⃣ 推荐启动顺序
+## 6️⃣ 推荐启动顺序
 
 ### ✅ Online 版推荐顺序
 
-1. 启动 `LiveKit Server`
+1. 先部署并确认 `LiveKit Server` 可用
 2. 确认在线 `ASR / LLM / TTS` 服务地址和密钥可用
 3. 在普通服务器或本机启动 Agent
 
@@ -142,20 +172,21 @@
 
 ### ⚙️ Local 版推荐顺序
 
-1. 先部署 `Qwen2.5-7B-Instruct` 的 vLLM 服务
-2. 再部署 `qwen-asr-streaming-service`
-3. 再部署 `qwen-tts-service`
-4. 修改 `.env.local`，把地址指到你自己的服务
-5. 根据实际效果调 `VAD / endpointing / interruption` 等参数
-6. 最后再启动 Agent
+1. 先部署并确认 `LiveKit Server` 可用
+2. 部署 `Qwen2.5-7B-Instruct` 的 vLLM 服务
+3. 部署 `qwen-asr-streaming-service`
+4. 部署 `qwen-tts-service`
+5. 修改 `.env.local`，把地址指到你自己的服务
+6. 根据实际效果调 `VAD / endpointing / interruption` 等参数
+7. 最后再启动 Agent
 
 这个版本的重点是：**先把模型服务和参数调到可用，再谈低延迟。**
 
 ---
 
-## 6️⃣ GPU 服务器启动方式
+## 7️⃣ GPU 服务器启动方式
 
-### 6.1 启动 Qwen2.5-7B-Instruct
+### 7.1 启动 Qwen2.5-7B-Instruct
 
 建议在你的 vLLM 环境里启动：
 
@@ -176,7 +207,7 @@ Agent 默认按 OpenAI 兼容接口接入：
 - `LLM_BASE_URL=http://<gpu-server>:8000/v1`
 - `LLM_API_KEY=fake-key`
 
-### 6.2 启动 Qwen ASR 流式服务
+### 7.2 启动 Qwen ASR 流式服务
 
 先安装依赖：
 
@@ -201,7 +232,7 @@ uv run qwen-asr-streaming-service/server.py \
 ws://<gpu-server>:8001/ws
 ```
 
-### 6.3 启动 Qwen3-TTS-CustomVoice 服务
+### 7.3 启动 Qwen3-TTS-CustomVoice 服务
 
 先安装依赖：
 
@@ -231,15 +262,15 @@ uv run qwen-tts-service/server.py \
 
 ---
 
-## 7️⃣ 普通服务器启动方式
+## 8️⃣ 普通服务器启动方式
 
-### 7.1 启动 LiveKit Server
+### 8.1 启动 LiveKit Server
 
 参考：
 
-- [`docs/LiveKit-Server部署.md`](./docs/LiveKit-Server部署.md)
+- [`docs/LiveKit-Server部署.md`](D:/Worker/LiveKit/my-agent/docs/LiveKit-Server部署.md)
 
-### 7.2 启动 Agent
+### 8.2 启动 Agent
 
 #### Online 部署形态
 
@@ -247,8 +278,8 @@ uv run qwen-tts-service/server.py \
 
 当前仓库里需要区分两件事：
 
-- [`src/agent_Online.py`](./src/agent_Online.py) 是历史线上入口，仍保留旧版云厂商配置
-- [`src/agent_Local.py`](./src/agent_Local.py) 才是当前已经切到 `Qwen ASR + qwen2.5-7b-instruct` 的入口
+- [`src/agent_Online.py`](D:/Worker/LiveKit/my-agent/src/agent_Online.py) 是历史线上入口，仍保留旧版云厂商配置
+- [`src/agent_Local.py`](D:/Worker/LiveKit/my-agent/src/agent_Local.py) 才是当前已经切到 `Qwen ASR + qwen2.5-7b-instruct` 的入口
 
 如果你只是先验证 Agent 能不能正常工作，优先跑：
 
@@ -268,6 +299,7 @@ uv run src/agent_Local.py dev
 
 启动前至少要保证：
 
+- `LIVEKIT_URL` 可用
 - `QWEN_STREAMING_STT_WS_URL` 可连通
 - `LLM_BASE_URL` 可连通
 - 如果后续切 Qwen TTS，还要保证 TTS 服务可连通
@@ -276,7 +308,7 @@ uv run src/agent_Local.py dev
 
 ---
 
-## 8️⃣ 推荐环境变量
+## 9️⃣ 推荐环境变量
 
 可以参考 `.env.local` / `.env.example`：
 
@@ -335,13 +367,13 @@ MAX_ENDPOINTING_DELAY=0.05
 - `LLM_*` 用于连接自部署 `qwen2.5-7b-instruct` 的 OpenAI 兼容接口
 - 当前 Agent 代码默认 TTS 还是 `MiniMax`
 - `ALLOW_INTERRUPTIONS` 到 `MAX_ENDPOINTING_DELAY` 这一组是 Local 版联调用的核心参数
-- 如果要正式切成 `Qwen3-TTS-CustomVoice`，还需要把 agent 侧 TTS 插件改成调用 [`qwen-tts-service/server.py`](./qwen-tts-service/server.py) 的 HTTP 接口
+- 如果要正式切成 `Qwen3-TTS-CustomVoice`，还需要把 agent 侧 TTS 插件改成调用 [`qwen-tts-service/server.py`](D:/Worker/LiveKit/my-agent/qwen-tts-service/server.py) 的 HTTP 接口
 
 `.env.example` 现在只保留了当前代码实际会读取的变量，没有再放没接入代码的旧占位项。
 
 ---
 
-## 9️⃣ 统一依赖管理
+## 🔟 统一依赖管理
 
 现在仓库统一使用根目录一个 `pyproject.toml`，不再拆多个 TOML。
 
@@ -371,7 +403,7 @@ uv sync --group asr_service --group tts_service
 
 ---
 
-## 🔟 目录结构
+## 1️⃣1️⃣ 目录结构
 
 ```text
 my-agent/
@@ -386,10 +418,10 @@ my-agent/
 
 ---
 
-## 1️⃣1️⃣ 相关文档
+## 1️⃣2️⃣ 相关文档
 
-- [`docs/系统架构与数据流.md`](./docs/系统架构与数据流.md)
-- [`docs/LLM部署.md`](./docs/LLM部署.md)
-- [`docs/LiveKit-Server部署.md`](./docs/LiveKit-Server部署.md)
-- [`qwen-asr-streaming-service/README.md`](./qwen-asr-streaming-service/README.md)
-- [`qwen-tts-service/README.md`](./qwen-tts-service/README.md)
+- [`docs/系统架构与数据流.md`](D:/Worker/LiveKit/my-agent/docs/系统架构与数据流.md)
+- [`docs/LLM部署.md`](D:/Worker/LiveKit/my-agent/docs/LLM部署.md)
+- [`docs/LiveKit-Server部署.md`](D:/Worker/LiveKit/my-agent/docs/LiveKit-Server部署.md)
+- [`qwen-asr-streaming-service/README.md`](D:/Worker/LiveKit/my-agent/qwen-asr-streaming-service/README.md)
+- [`qwen-tts-service/README.md`](D:/Worker/LiveKit/my-agent/qwen-tts-service/README.md)
