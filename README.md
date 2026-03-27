@@ -280,11 +280,38 @@ uv run src/agent_Local.py dev
 
 可以参考 `.env.local` / `.env.example`：
 
+### 🌐 通用变量
+
 ```env
 LIVEKIT_URL=
 LIVEKIT_API_KEY=
 LIVEKIT_API_SECRET=
+MINIMAX_API_KEY=
+```
 
+### 🌐 Online 版实际需要
+
+`src/agent_Online.py` 目前实际读取这些变量：
+
+```env
+VOLCENGINE_STT_APP_ID=
+VOLCENGINE_STT_ACCESS_TOKEN=
+VOLCENGINE_BIGMODEL_STT_MODEL=bigmodel
+DASHSCOPE_API_KEY=
+MINIMAX_API_KEY=
+```
+
+说明：
+
+- `Online` 版默认走火山 STT
+- `Online` 版 LLM 目前走 DashScope 兼容接口
+- `Online` 版 TTS 目前走 MiniMax
+
+### 💻 Local 版实际需要
+
+`src/agent_Local.py` 目前实际读取这些变量：
+
+```env
 QWEN_STREAMING_STT_WS_URL=ws://127.0.0.1:8001/ws
 QWEN_STREAMING_STT_MODEL=qwen3-asr-streaming
 
@@ -293,12 +320,24 @@ LLM_BASE_URL=http://127.0.0.1:8000/v1
 LLM_API_KEY=fake-key
 
 MINIMAX_API_KEY=
+
+ALLOW_INTERRUPTIONS=false
+PREEMPTIVE_GENERATION=false
+RESUME_FALSE_INTERRUPTION=false
+MIN_INTERRUPTION_DURATION=0.45
+MIN_ENDPOINTING_DELAY=0.0
+MAX_ENDPOINTING_DELAY=0.05
 ```
 
 说明：
 
+- `QWEN_STREAMING_STT_*` 用于连接自部署 Qwen ASR WebSocket 服务
+- `LLM_*` 用于连接自部署 `qwen2.5-7b-instruct` 的 OpenAI 兼容接口
 - 当前 Agent 代码默认 TTS 还是 `MiniMax`
+- `ALLOW_INTERRUPTIONS` 到 `MAX_ENDPOINTING_DELAY` 这一组是 Local 版联调用的核心参数
 - 如果要正式切成 `Qwen3-TTS-CustomVoice`，还需要把 agent 侧 TTS 插件改成调用 [`qwen-tts-service/server.py`](./qwen-tts-service/server.py) 的 HTTP 接口
+
+`.env.example` 现在只保留了当前代码实际会读取的变量，没有再放没接入代码的旧占位项。
 
 ---
 
