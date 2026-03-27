@@ -9,8 +9,8 @@ Minimal HTTP service that keeps a `Qwen3TTSModel` loaded in memory and exposes:
 ## Install
 
 ```bash
-cd qwen-tts-service
-uv sync
+cd /path/to/repo-root
+uv sync --group tts_service
 ```
 
 ## Run

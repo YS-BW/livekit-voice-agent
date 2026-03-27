@@ -19,6 +19,20 @@ dev = [
     "pytest-asyncio",
     "ruff",
 ]
+asr_service = [
+    "fastapi>=0.115.0",
+    "numpy>=1.26.0",
+    "qwen-asr[vllm]>=0.1.0",
+    "uvicorn[standard]>=0.34.0",
+    "webrtcvad-wheels>=2.0.14",
+]
+tts_service = [
+    "fastapi>=0.115.0",
+    "qwen-tts>=0.1.0",
+    "soundfile>=0.13.0",
+    "torch>=2.0.0",
+    "uvicorn[standard]>=0.34.0",
+]
 
 [build-system]
 requires = ["setuptools>=61.0", "wheel"]

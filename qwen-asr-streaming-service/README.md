@@ -13,22 +13,14 @@
 
 - `server.py`
   流式服务入口
-- `pyproject.toml`
-  这个独立模块的依赖定义
 
 ## 依赖安装
 
-建议在服务器上进入这个目录后用 `uv` 安装：
+在仓库根目录统一安装 `asr_service` 依赖组：
 
 ```bash
-cd /root/LiveKit/qwen-asr-streaming-service
-uv sync
-```
-
-如果你已经在目标虚拟环境里，也可以：
-
-```bash
-uv add "qwen-asr[vllm]" fastapi uvicorn numpy
+cd /root/LiveKit
+uv sync --group asr_service
 ```
 
 ## 启动
