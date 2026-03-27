@@ -7,9 +7,9 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 from livekit.agents import AgentServer, AgentSession, JobContext, cli, room_io
-from livekit.plugins import minimax, openai, silero,volcengine
+from livekit.plugins import minimax, openai
 
-ROOT_DIR = Path(__file__).resolve().parents[2]
+ROOT_DIR = Path(__file__).resolve().parents[1]
 PLUGIN_DIR = ROOT_DIR / "qwen-livekit-stt"
 if str(PLUGIN_DIR) not in sys.path:
     sys.path.insert(0, str(PLUGIN_DIR))
@@ -28,7 +28,21 @@ logger = logging.getLogger("agent")
 load_dotenv(".env.local")
 
 server = AgentServer()
-METRICS_LOG_DIR = Path(__file__).resolve().parents[2] / "log"
+METRICS_LOG_DIR = ROOT_DIR / "log"
+
+
+def _env_float(name: str, default: float) -> float:
+    value = os.getenv(name)
+    if value is None or value == "":
+        return default
+    return float(value)
+
+
+def _env_bool(name: str, default: bool) -> bool:
+    value = os.getenv(name)
+    if value is None or value == "":
+        return default
+    return value.strip().lower() in {"1", "true", "yes", "on"}
 
 
 @server.rtc_session(agent_name="my-agent")
@@ -53,32 +67,32 @@ async def my_agent(ctx: JobContext) -> None:
         "stt backend fixed",
         extra={"backend": "qwen_streaming_ws", "ws_url": qwen_streaming_ws_url},
     )
-    llm_model = os.getenv("LLM_MODEL", "./qwen/qwen2.5-7b/")
+    llm_model = os.getenv("LLM_MODEL", "qwen2.5-7b-instruct")
     llm_base_url = os.getenv("LLM_BASE_URL", "http://8.141.21.41:8000/v1")
     llm_api_key = os.getenv("LLM_API_KEY", "fake-key")
+    allow_interruptions = _env_bool("ALLOW_INTERRUPTIONS", False)
+    preemptive_generation = _env_bool("PREEMPTIVE_GENERATION", False)
+    resume_false_interruption = _env_bool("RESUME_FALSE_INTERRUPTION", False)
+    min_interruption_duration = _env_float("MIN_INTERRUPTION_DURATION", 0.45)
+    min_endpointing_delay = _env_float("MIN_ENDPOINTING_DELAY", 0.0)
+    max_endpointing_delay = _env_float("MAX_ENDPOINTING_DELAY", 0.05)
 
     session = AgentSession(
-        # stt=QwenStreamingSTT(
-        #     ws_url=qwen_streaming_ws_url,
-        #     model=os.getenv("QWEN_STREAMING_STT_MODEL", "qwen3-asr-streaming"),
-        # ),
-        stt=volcengine.BigModelSTT(
-            app_id=os.getenv("VOLCENGINE_STT_APP_ID", ""),
-            access_token=os.getenv("VOLCENGINE_STT_ACCESS_TOKEN"),
-            model_name=os.getenv("VOLCENGINE_BIGMODEL_STT_MODEL", "bigmodel"),
-            enable_itn=False,
-            enable_punc=False,
-            enable_ddc=False,
-            vad_segment_duration=1200,
-            end_window_size=240,
-            force_to_speech_time=1000,
-            interim_results=True,
+        stt=QwenStreamingSTT(
+            ws_url=qwen_streaming_ws_url,
+            model=os.getenv("QWEN_STREAMING_STT_MODEL", "qwen3-asr-streaming"),
         ),
         llm=openai.LLM(
             model=llm_model,
             base_url=llm_base_url,
             api_key=llm_api_key,
         ),
+        # llm=openai.LLM(
+        #     # ollama
+        #     model="qwen2.5:0.5b",
+        #     base_url=os.getenv("OLLAMA_BASE_URL", "http://127.0.0.1:11434/v1"),
+        #     api_key=llm_api_key,
+        # ),
         tts=minimax.TTS(
             model="speech-02-turbo",
             voice="socialmedia_female_1_v1",
@@ -86,20 +100,13 @@ async def my_agent(ctx: JobContext) -> None:
             base_url="https://api.minimax.chat",
             speed=1.05,
         ),
-        preemptive_generation=True,
-        min_interruption_duration=0.2,
-        min_endpointing_delay=0.0,
-        max_endpointing_delay=0.05,
+        allow_interruptions=allow_interruptions,
+        resume_false_interruption=resume_false_interruption,
+        preemptive_generation=preemptive_generation,
+        min_interruption_duration=min_interruption_duration,
+        min_endpointing_delay=min_endpointing_delay,
+        max_endpointing_delay=max_endpointing_delay,
         turn_detection="stt",
-        vad=silero.VAD.load(
-            min_speech_duration=0.04,
-            min_silence_duration=0.06,
-            activation_threshold=0.55,
-            deactivation_threshold=0.45,
-            prefix_padding_duration=0.12,
-            max_buffered_speech=20.0,
-            sample_rate=16000,
-        ),
     )
 
     await ctx.connect()

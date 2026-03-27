@@ -3,6 +3,6 @@
     "src"
   ],
   "extraPaths": [
-    "../qwen-livekit-stt"
+    "qwen-livekit-stt"
   ]
 }

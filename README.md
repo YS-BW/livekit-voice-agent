@@ -4,7 +4,7 @@
 
 ## 当前链路
 
-- STT：当前本地入口默认使用火山引擎 `BigModelSTT`
+- STT：本地入口使用 `QwenStreamingSTT + qwen-asr-streaming-service`
 - LLM：通过 OpenAI 兼容接口接入自部署 vLLM
 - TTS：MiniMax `speech-02-turbo`
 - 日志：会话级 JSONL 指标日志
@@ -63,8 +63,8 @@ uv run src/agent_Local.py dev
 - `LIVEKIT_URL`
 - `LIVEKIT_API_KEY`
 - `LIVEKIT_API_SECRET`
-- `VOLCENGINE_STT_APP_ID`
-- `VOLCENGINE_STT_ACCESS_TOKEN`
+- `QWEN_STREAMING_STT_WS_URL`
+- `QWEN_STREAMING_STT_MODEL`
 - `MINIMAX_API_KEY`
 - `LLM_BASE_URL`
 - `LLM_API_KEY`

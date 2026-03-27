@@ -1,17 +1,22 @@
-﻿import argparse
+import argparse
 import asyncio
 import json
 import logging
-from dataclasses import dataclass
+from collections import deque
+from dataclasses import dataclass, field
 from typing import Any
 
 import numpy as np
 import uvicorn
+import webrtcvad
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from qwen_asr import Qwen3ASRModel
 
 logger = logging.getLogger("qwen_asr_streaming_service")
 app = FastAPI(title="Qwen3-ASR Streaming Service")
+
+SAMPLE_RATE = 16000
+SAMPLE_WIDTH_BYTES = 2
 
 
 @dataclass
@@ -23,6 +28,9 @@ class StreamSession:
     silence_ms: float = 0.0
     audio_duration: float = 0.0
     finalize_task: asyncio.Task[None] | None = None
+    pre_speech_buffer: deque[tuple[bytes, float]] = field(default_factory=deque)
+    pre_speech_buffer_ms: float = 0.0
+    vad_remainder: bytes = b""
 
 
 class StreamingASRService:
@@ -39,6 +47,9 @@ class StreamingASRService:
         energy_threshold: float,
         min_speech_ms: float,
         silence_timeout_ms: float,
+        vad_mode: int,
+        vad_frame_ms: int,
+        pre_speech_pad_ms: float,
     ) -> None:
         self._asr = Qwen3ASRModel.LLM(
             model=model,
@@ -52,6 +63,12 @@ class StreamingASRService:
         self._energy_threshold = energy_threshold
         self._min_speech_ms = min_speech_ms
         self._silence_timeout_ms = silence_timeout_ms
+        self._vad = webrtcvad.Vad(vad_mode)
+        self._vad_frame_ms = vad_frame_ms
+        self._pre_speech_pad_ms = pre_speech_pad_ms
+        self._vad_frame_bytes = int(
+            (SAMPLE_RATE * vad_frame_ms / 1000.0) * SAMPLE_WIDTH_BYTES
+        )
 
     def _new_state(self) -> Any:
         return self._asr.init_streaming_state(
@@ -71,14 +88,81 @@ class StreamingASRService:
         session.silence_ms = 0.0
         session.audio_duration = 0.0
         session.finalize_task = None
+        session.pre_speech_buffer.clear()
+        session.pre_speech_buffer_ms = 0.0
+        session.vad_remainder = b""
 
     def _segment_ms(self, seg: np.ndarray) -> float:
-        return (len(seg) / 16000.0) * 1000.0
+        return (len(seg) / SAMPLE_RATE) * 1000.0
 
     def _segment_rms(self, seg: np.ndarray) -> float:
         if seg.size == 0:
             return 0.0
         return float(np.sqrt(np.mean(np.square(seg), dtype=np.float32)))
+
+    def _pcm16_duration_s(self, pcm16: bytes) -> float:
+        return len(pcm16) / SAMPLE_WIDTH_BYTES / float(SAMPLE_RATE)
+
+    def _buffer_pre_speech(
+        self, session: StreamSession, pcm16: bytes, chunk_ms: float
+    ) -> None:
+        if not pcm16:
+            return
+
+        session.pre_speech_buffer.append((pcm16, chunk_ms))
+        session.pre_speech_buffer_ms += chunk_ms
+        while (
+            session.pre_speech_buffer
+            and session.pre_speech_buffer_ms > self._pre_speech_pad_ms
+        ):
+            _, dropped_ms = session.pre_speech_buffer.popleft()
+            session.pre_speech_buffer_ms -= dropped_ms
+
+    def _flush_pre_speech(self, session: StreamSession) -> bytes:
+        if not session.pre_speech_buffer:
+            return b""
+
+        pcm16 = b"".join(chunk for chunk, _ in session.pre_speech_buffer)
+        session.pre_speech_buffer.clear()
+        session.pre_speech_buffer_ms = 0.0
+        return pcm16
+
+    def _vad_voiced_ms(self, session: StreamSession, pcm16: bytes) -> float:
+        if not pcm16:
+            return 0.0
+
+        buf = session.vad_remainder + pcm16
+        voiced_ms = 0.0
+        offset = 0
+        while offset + self._vad_frame_bytes <= len(buf):
+            frame = buf[offset : offset + self._vad_frame_bytes]
+            if self._vad.is_speech(frame, SAMPLE_RATE):
+                voiced_ms += self._vad_frame_ms
+            offset += self._vad_frame_bytes
+
+        session.vad_remainder = buf[offset:]
+        return voiced_ms
+
+    def _transcribe_bytes(
+        self, session: StreamSession, pcm16: bytes
+    ) -> dict[str, Any] | None:
+        if not pcm16:
+            return None
+
+        seg = np.frombuffer(pcm16, dtype=np.int16).astype(np.float32) / 32768.0
+        self._asr.streaming_transcribe(seg, session.state)
+        session.audio_duration += self._pcm16_duration_s(pcm16)
+
+        text = str(getattr(session.state, "text", "") or "")
+        language = getattr(session.state, "language", None)
+        if text and text != session.last_text:
+            session.last_text = text
+            return {
+                "type": "interim",
+                "text": text,
+                "language": language,
+            }
+        return None
 
     def push_audio(self, session: StreamSession, pcm16: bytes) -> dict[str, Any] | None:
         if not pcm16:
@@ -87,9 +171,11 @@ class StreamingASRService:
         seg = np.frombuffer(pcm16, dtype=np.int16).astype(np.float32) / 32768.0
         chunk_ms = self._segment_ms(seg)
         rms = self._segment_rms(seg)
-        is_voiced = rms >= self._energy_threshold
+        vad_voiced_ms = self._vad_voiced_ms(session, pcm16)
+        is_voiced = rms >= self._energy_threshold and vad_voiced_ms > 0.0
 
-        session.audio_duration += chunk_ms / 1000.0
+        if not session.speech_started:
+            self._buffer_pre_speech(session, pcm16, chunk_ms)
 
         if is_voiced:
             session.voiced_ms += chunk_ms
@@ -101,21 +187,19 @@ class StreamingASRService:
                 session.speech_started = True
                 logger.info(
                     "speech started",
-                    extra={"voiced_ms": round(session.voiced_ms, 1), "rms": round(rms, 5)},
+                    extra={
+                        "voiced_ms": round(session.voiced_ms, 1),
+                        "vad_voiced_ms": round(vad_voiced_ms, 1),
+                        "rms": round(rms, 5),
+                    },
                 )
+                return self._transcribe_bytes(session, self._flush_pre_speech(session))
         elif session.speech_started:
             session.silence_ms += chunk_ms
 
-        self._asr.streaming_transcribe(seg, session.state)
-        text = str(getattr(session.state, "text", "") or "")
-        language = getattr(session.state, "language", None)
-        if text and text != session.last_text:
-            session.last_text = text
-            return {
-                "type": "interim",
-                "text": text,
-                "language": language,
-            }
+        if session.speech_started:
+            return self._transcribe_bytes(session, pcm16)
+
         return None
 
     def should_finalize(self, session: StreamSession) -> bool:
@@ -180,9 +264,10 @@ async def ws_stream(websocket: WebSocket) -> None:
         if session is None:
             return
         try:
-            await asyncio.sleep(service._silence_timeout_ms / 1000.0)
             if session is not None and service.should_finalize(session):
-                await _finalize_current_session(reason="silence_timeout", close_after=False)
+                await _finalize_current_session(
+                    reason="silence_timeout", close_after=False
+                )
         except asyncio.CancelledError:
             return
 
@@ -209,7 +294,9 @@ async def ws_stream(websocket: WebSocket) -> None:
                     if session.finalize_task is not None:
                         session.finalize_task.cancel()
                         session.finalize_task = None
-                    await _finalize_current_session(reason="explicit_finish", close_after=True)
+                    await _finalize_current_session(
+                        reason="explicit_finish", close_after=True
+                    )
                     break
 
                 if msg_type == "ping":
@@ -240,7 +327,9 @@ async def ws_stream(websocket: WebSocket) -> None:
     except Exception:
         logger.exception("streaming session failed")
         if websocket.client_state.name == "CONNECTED":
-            await websocket.send_json({"type": "error", "message": "internal server error"})
+            await websocket.send_json(
+                {"type": "error", "message": "internal server error"}
+            )
     finally:
         if session is not None and session.finalize_task is not None:
             session.finalize_task.cancel()
@@ -257,9 +346,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--unfixed-chunk-num", type=int, default=2)
     parser.add_argument("--unfixed-token-num", type=int, default=5)
     parser.add_argument("--chunk-size-sec", type=float, default=2.0)
-    parser.add_argument("--energy-threshold", type=float, default=0.008)
-    parser.add_argument("--min-speech-ms", type=float, default=80.0)
-    parser.add_argument("--silence-timeout-ms", type=float, default=120.0)
+    parser.add_argument("--energy-threshold", type=float, default=0.015)
+    parser.add_argument("--min-speech-ms", type=float, default=180.0)
+    parser.add_argument("--silence-timeout-ms", type=float, default=280.0)
+    parser.add_argument("--vad-mode", type=int, choices=[0, 1, 2, 3], default=2)
+    parser.add_argument("--vad-frame-ms", type=int, choices=[10, 20, 30], default=30)
+    parser.add_argument("--pre-speech-pad-ms", type=float, default=240.0)
     parser.add_argument("--log-level", default="info")
     return parser.parse_args()
 
@@ -285,6 +377,9 @@ def main() -> None:
         energy_threshold=args.energy_threshold,
         min_speech_ms=args.min_speech_ms,
         silence_timeout_ms=args.silence_timeout_ms,
+        vad_mode=args.vad_mode,
+        vad_frame_ms=args.vad_frame_ms,
+        pre_speech_pad_ms=args.pre_speech_pad_ms,
     )
 
     uvicorn.run(app, host=args.host, port=args.port, log_level=args.log_level)
@@ -292,5 +387,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-
-
